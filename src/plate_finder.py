@@ -1,7 +1,7 @@
 """
-src/plate_finder.py - PlateFinder Class
+src/plate_finder.py - Vehicle License Plate Localization
 
-Implements Stage 1 candidate plate localization:
+Implements candidate plate localization:
 1. Preprocessing: Blur(7x7) -> Grayscale -> Sobel-X -> Otsu -> Morphological Close (22x3)
 2. External contour extraction
 3. Geometric filtering (Area, Aspect Ratio, Tilt Angle)

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """
-debug_plate_finder.py - Debug script for Stage 1 Plate Detection
+debug_plate_finder.py - Diagnostics & Stage Visualizer
 
-Runs PlateFinder on a still image and writes each stage to the 'output/' folder:
+Runs the license plate localization pipeline on a still image and exports
+all intermediate transformation stages into an output directory:
   1. 01_blur.jpg               - Gaussian Blur (7x7)
   2. 02_gray.jpg               - Grayscale
   3. 03_sobel.jpg              - Vertical Edges (Sobel-X)
   4. 04_threshold.jpg          - Otsu Threshold
   5. 05_closed.jpg             - Morphological Close (22x3)
-  6. 06_all_contours.jpg       - All candidate contours (yellow/red)
+  6. 06_all_contours.jpg       - All candidate contours
   7. 07_validated_contours.jpg - Validated plates drawn in green
 """
 

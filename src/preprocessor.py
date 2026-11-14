@@ -1,5 +1,5 @@
 """
-src/preprocessor.py - Phase 2: Frame Preprocessing & Vertical Edge Extraction
+src/preprocessor.py - Frame Preprocessing & Vertical Edge Extraction
 
 Performs color conversion, noise suppression, and vertical edge isolation
 tailored for detecting vehicle license plates.

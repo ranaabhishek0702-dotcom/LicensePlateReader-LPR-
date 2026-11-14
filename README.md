@@ -1,79 +1,135 @@
-# Real-Time Car License Plate Detector & Reader
+# Real-Time Automatic Number Plate Recognition (ANPR)
 
-An educational step-by-step implementation of an Automatic Number Plate Recognition (ANPR / ALPR) system in Python using OpenCV, NumPy, and Scikit-Image.
-
----
-
-## 6-Phase Learning Roadmap
-
-This project is developed incrementally across 6 phases:
-- **Phase 1 (Current):** Project scaffolding, video streaming basics, and pipeline architecture.
-- **Phase 2:** Frame preprocessing (grayscale, noise reduction, and vertical edge detection).
-- **Phase 3:** Binarization (Otsu's thresholding) and morphological transformations.
-- **Phase 4:** Contour detection, geometric filtering, and plate region-of-interest (ROI) extraction.
-- **Phase 5:** Character segmentation within the detected plate.
-- **Phase 6:** Optical Character Recognition (OCR) and real-time bounding box/text overlay.
+A modular, real-time Computer Vision system for vehicle license plate detection and character recognition built with Python and OpenCV.
 
 ---
 
-## Pipeline Overview (Plain English)
+## Overview
 
-The classical computer vision pipeline detects and reads license plates using the following sequential steps:
+This repository provides an end-to-end Automatic Number Plate Recognition (ANPR / ALPR) pipeline. It combines classical image processing (spatial gradient analysis, dynamic thresholding, and morphological operations) with geometric contour validation to isolate vehicle license plates from real-time video streams and still images.
 
-1. **Blur & Grayscale (`blur/gray`)**
-   - **What it does:** Converts color 3-channel BGR video frames into single-channel grayscale, then applies Gaussian smoothing.
-   - **Why:** Color information is not needed to spot rectangular borders or alphanumeric text. Blurring eliminates high-frequency noise and pixel artifacts that would cause false edge detections.
+---
 
-2. **Vertical Edge Extraction (`vertical edges`)**
-   - **What it does:** Applies Sobel filtering along the x-axis (horizontal gradient / vertical edges).
-   - **Why:** License plates are composed of dense, closely spaced characters and rectangular border lines that generate strong vertical edges compared to the smooth surface of the car body.
+## System Architecture
 
-3. **Thresholding (`threshold`)**
-   - **What it does:** Converts the gradient edge image into a pure binary image (black & white pixels) using Otsu's thresholding.
-   - **Why:** Binarization cleanly separates high-contrast edge regions (foreground white pixels) from flat or low-contrast areas (background black pixels) without needing hardcoded pixel cutoff values.
+The pipeline processes input frames through sequential image processing stages:
 
-4. **Morphological Transformations (`morphology`)**
-   - **What it does:** Applies a morphological **Closing** operation using a wide, rectangular structuring element (kernel).
-   - **Why:** Closing bridges the tiny dark gaps between adjacent vertical character strokes, turning the scattered letters into a single, cohesive white rectangular blob.
+```
+[ Input Frame (BGR) ]
+          │
+          ▼
+[ 1. Grayscale & Noise Reduction ]  --> cv2.cvtColor, cv2.GaussianBlur (7x7)
+          │
+          ▼
+[ 2. Vertical Edge Extraction ]    --> Sobel-X operator (dx=1, dy=0)
+          │
+          ▼
+[ 3. Dynamic Binarization ]        --> Otsu's Thresholding
+          │
+          ▼
+[ 4. Morphological Consolidation ] --> Morphological Closing (22x3 rectangular kernel)
+          │
+          ▼
+[ 5. Contour Extraction ]          --> cv2.findContours (RETR_EXTERNAL)
+          │
+          ▼
+[ 6. Geometric Validation ]        --> cv2.minAreaRect (Area, Aspect Ratio, Tilt Filter)
+          │
+          ▼
+[ 7. Candidate Plate Extraction ]  --> Normalized Plate ROI for Character Segmentation
+```
 
-5. **Contour Extraction (`contours`)**
-   - **What it does:** Uses border-following algorithms (`cv2.findContours`) to detect boundaries of all connected white regions in the binary image.
-   - **Why:** Provides a list of coordinate polygons representing all candidate objects in the scene.
-
-6. **Validate Plate Shape (`validate plate shape`)**
-   - **What it does:** Computes the bounding rectangle and aspect ratio (width / height) and surface area for each contour.
-   - **Why:** Filters out non-plate shapes (headlights, bumpers, road signs) by enforcing geometric constraints (e.g., standard license plates have an aspect ratio typically between 2.0 and 5.5 and fall within reasonable pixel area limits).
-
-7. **Character Segmentation (`segment characters`)**
-   - **What it does:** Crops the candidate plate region, extracts the brightness/value channel in HSV, applies adaptive thresholding, and finds individual character contours from left to right.
-   - **Why:** Isolates each alphanumeric character as its own clean bitmap, eliminating plate frame borders, screws, or shadows.
-
-8. **Optical Character Recognition (`OCR`)**
-   - **What it does:** Passes each segmented character (or the cropped plate) into a recognition model (neural network or OCR engine) to predict alphanumeric characters (`0–9`, `A–Z`).
-   - **Why:** Converts visual pixel representations into a machine-readable text string for vehicle identification.
+### Key Technical Decisions
+- **Vertical Edge Isolation (Sobel-X):** Exploits the dense vertical character strokes on vehicle plates while suppressing horizontal vehicle lines (bumpers, grilles, hood lines).
+- **Signed 16-Bit Derivative Space (`CV_16S`):** Preserves negative spatial gradients (dark-to-bright and bright-to-dark transitions) prior to absolute scaling.
+- **Otsu's Thresholding:** Dynamically computes optimal binarization thresholds based on the image histogram to handle changing lighting and shadow conditions.
+- **Asymmetric Morphological Closing ($22 \times 3$):** Fuses adjacent character strokes horizontally into a single cohesive rectangular bounding contour without bleeding into adjacent bumper structures.
+- **Rotated Minimum Area Bounding (`minAreaRect`):** Computes accurate dimensions and orientation angles, rejecting false positives based on aspect ratio, surface area, and tilt limits.
 
 ---
 
 ## Project Structure
 
 ```
-NumberPlateDetector/
-├── README.md               # Project documentation and pipeline guide
-├── requirements.txt        # Core dependencies
-├── main.py                 # Main execution script (Phase 1: Video playback)
-├── src/                    # Source package for modular components
-│   └── __init__.py
-└── data/                   # Test videos and images
+.
+├── main.py                 # Real-time video stream runner & multi-view visualizer
+├── debug_plate_finder.py   # Diagnostics tool exporting intermediate processing stages
+├── requirements.txt        # Package dependencies
+├── src/                    # Core library
+│   ├── __init__.py
+│   ├── plate_finder.py     # Plate localization, morphology, and geometric validation
+│   └── preprocessor.py     # Grayscale, Gaussian smoothing, and gradient operations
+└── data/                   # Input media (videos, sample frames)
 ```
 
 ---
 
-## Phase 1: What I Should Understand Checklist
+## Installation
 
-Before moving to Phase 2, make sure you can answer and understand:
+### Prerequisites
+- Python 3.9+
+- OpenCV, NumPy, Scikit-Image, Imutils
 
-- [ ] **Video as a sequence of frames:** A video file is simply a stream of discrete image matrices (frames) read sequentially over time.
-- [ ] **`cv2.VideoCapture` mechanics:** How OpenCV opens a video file or camera stream, buffers data, and exposes capture properties (FPS, resolution, frame count).
-- [ ] **The `ret` boolean flag:** Why `cap.read()` returns two values, what `ret == False` signals (end of file vs. decode failure), and why testing `ret` prevents segmentation faults or `NoneType` errors.
-- [ ] **Frame timing with `cv2.waitKey`:** Why `cv2.waitKey(delay)` is required to render GUI windows in OpenCV, how `delay` controls playback speed, and how key event masks (`& 0xFF == ord('q')`) capture keyboard input.
-- [ ] **Resource management:** Why `cap.release()` and `cv2.destroyAllWindows()` must be called to free OS video decoding handles and GUI resources.
+```bash
+git clone https://github.com/ranaabhishek0702-dotcom/LicensePlateReader-LPR-.git
+cd LicensePlateReader-LPR-
+pip install -r requirements.txt
+```
+
+---
+
+## Usage
+
+### 1. Real-Time Video Processing
+Run the live video pipeline on any recorded video file or stream:
+
+```bash
+python3 main.py path/to/video.mp4
+```
+
+#### Interactive Keyboard Controls:
+| Key | Action |
+| :---: | :--- |
+| `g` | 2x2 multi-stage grid view (Original, Gray, Blur, Vertical Edges) |
+| `1` | Original BGR stream |
+| `2` | Grayscale stream |
+| `3` | Gaussian blurred stream |
+| `4` | Vertical edges (Sobel-X) stream |
+| `SPACE` | Pause / resume playback |
+| `q` | Exit application |
+
+### 2. Single-Image Diagnostics & Stage Visualization
+To analyze a single image and inspect every intermediate image processing step:
+
+```bash
+python3 debug_plate_finder.py path/to/car.jpg --output output/
+```
+
+This exports 7 sequential diagnostic artifacts to the output directory:
+1. `01_blur.jpg`: Gaussian smoothed frame ($7 \times 7$)
+2. `02_gray.jpg`: Grayscale luminance channel
+3. `03_sobel.jpg`: Vertical edge gradient magnitude (Sobel-X)
+4. `04_threshold.jpg`: Otsu threshold binary mask
+5. `05_closed.jpg`: Morphological closing ($22 \times 3$ kernel)
+6. `06_all_contours.jpg`: All extracted external contours
+7. `07_validated_contours.jpg`: Validated plate candidates annotated with geometry metrics
+
+---
+
+## Configuration & Tuning Parameters
+
+Plate detection thresholds can be configured when initializing `PlateFinder`:
+
+| Parameter | Default | Description |
+| :--- | :---: | :--- |
+| `min_area` | `800` | Minimum bounding box pixel area |
+| `max_area` | `50000` | Maximum bounding box pixel area |
+| `min_ratio` | `2.0` | Minimum aspect ratio (width / height) |
+| `max_ratio` | `6.0` | Maximum aspect ratio (width / height) |
+| `max_tilt` | `15.0` | Maximum allowed angle deviation (degrees) from horizontal |
+
+---
+
+## License
+
+MIT License.
