@@ -64,15 +64,23 @@ The pipeline processes input frames through sequential image processing stages:
 
 ---
 
-## Installation
+## Getting Started
 
 ### Prerequisites
-- Python 3.9+
-- OpenCV, NumPy, Scikit-Image, Imutils
+- Python 3.9 or higher
+
+### Installation
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/ranaabhishek0702-dotcom/LicensePlateReader-LPR-.git
 cd LicensePlateReader-LPR-
+
+# 2. Set up a virtual environment (recommended)
+python3 -m venv venv
+source venv/bin/activate  # On Windows use: venv\Scripts\activate
+
+# 3. Install required packages
 pip install -r requirements.txt
 ```
 
