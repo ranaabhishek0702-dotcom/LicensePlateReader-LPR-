@@ -140,4 +140,4 @@ Plate detection thresholds can be configured when initializing `PlateFinder`:
 
 ## License
 
-MIT License.
+Distributed under the MIT License. See [LICENSE](LICENSE) for more information.
