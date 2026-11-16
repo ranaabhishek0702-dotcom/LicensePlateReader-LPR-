@@ -100,16 +100,19 @@ def generate_synthetic_char_dataset(
             if contours:
                 c = max(contours, key=cv2.contourArea)
                 bx, by, bw, bh = cv2.boundingRect(c)
-                patch = canvas[by:by+bh, bx:bx+bw]
+                if bw > 2 and bh > 2:
+                    patch = canvas[by:by+bh, bx:bx+bw]
 
-                # Square pad
-                max_dim = max(bw, bh)
-                pt = (max_dim - bh) // 2
-                pb = max_dim - bh - pt
-                pl = (max_dim - bw) // 2
-                pr = max_dim - bw - pl
-                padded = cv2.copyMakeBorder(patch, pt, pb, pl, pr, cv2.BORDER_CONSTANT, value=0)
-                final_glyph = cv2.resize(padded, img_size, interpolation=cv2.INTER_AREA)
+                    # Square pad
+                    max_dim = max(bw, bh)
+                    pt = (max_dim - bh) // 2
+                    pb = max_dim - bh - pt
+                    pl = (max_dim - bw) // 2
+                    pr = max_dim - bw - pl
+                    padded = cv2.copyMakeBorder(patch, pt, pb, pl, pr, cv2.BORDER_CONSTANT, value=0)
+                    final_glyph = cv2.resize(padded, img_size, interpolation=cv2.INTER_AREA)
+                else:
+                    final_glyph = cv2.resize(canvas, img_size, interpolation=cv2.INTER_AREA)
             else:
                 final_glyph = cv2.resize(canvas, img_size, interpolation=cv2.INTER_AREA)
 
@@ -131,7 +134,8 @@ def build_cnn_model(input_shape=(28, 28, 1), num_classes=36):
     Lightweight 2-block ConvNet tailored for isolated alphanumeric glyphs.
     """
     model = tf.keras.Sequential([
-        tf.keras.layers.Conv2D(32, (3, 3), activation='relu', padding='same', input_shape=input_shape),
+        tf.keras.layers.Input(shape=input_shape),
+        tf.keras.layers.Conv2D(32, (3, 3), activation='relu', padding='same'),
         tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling2D((2, 2)),
 
@@ -181,8 +185,26 @@ def train_model(
         print("Downloading and preparing EMNIST dataset...")
         try:
             import tensorflow_datasets as tfds
-            ds = tfds.load('emnist/balanced', split='train', as_supervised=True)
-            print("EMNIST loaded successfully.")
+            ds_train, ds_val = tfds.load(
+                'emnist/balanced',
+                split=['train', 'test'],
+                as_supervised=True,
+                batch_size=-1
+            )
+            # Convert TFDS to numpy arrays
+            X_train_raw, y_train_raw = tfds.as_numpy(ds_train)
+            X_val_raw, y_val_raw = tfds.as_numpy(ds_val)
+
+            # EMNIST Balanced has 47 classes (0-9 are 0-9, 10-35 are A-Z)
+            # Filter only the 36 classes we care about (0 to 35)
+            train_mask = y_train_raw < len(ALPHANUMERIC_CHARS)
+            val_mask = y_val_raw < len(ALPHANUMERIC_CHARS)
+
+            X_train = (X_train_raw[train_mask].astype("float32") / 255.0).reshape(-1, 28, 28, 1)
+            y_train = y_train_raw[train_mask]
+            X_val = (X_val_raw[val_mask].astype("float32") / 255.0).reshape(-1, 28, 28, 1)
+            y_val = y_val_raw[val_mask]
+            print(f"EMNIST filtered: {len(X_train)} train, {len(X_val)} validation samples.")
         except Exception as e:
             print(f"Failed to load EMNIST via tensorflow_datasets: {e}", file=sys.stderr)
             sys.exit(1)
@@ -193,29 +215,28 @@ def train_model(
         split = int(0.85 * len(X))
         X_train, X_val = X[:split], X[split:]
         y_train, y_val = y[:split], y[split:]
-
         print(f"Dataset ready: {len(X_train)} training samples, {len(X_val)} validation samples.")
 
-        model = build_cnn_model(input_shape=(28, 28, 1), num_classes=len(ALPHANUMERIC_CHARS))
-        model.summary()
+    model = build_cnn_model(input_shape=(28, 28, 1), num_classes=len(ALPHANUMERIC_CHARS))
+    model.summary()
 
-        print(f"\nTraining CNN across {epochs} epochs...")
-        model.fit(
-            X_train,
-            y_train,
-            validation_data=(X_val, y_val),
-            epochs=epochs,
-            batch_size=batch_size,
-        )
+    print(f"\nTraining CNN across {epochs} epochs...")
+    model.fit(
+        X_train,
+        y_train,
+        validation_data=(X_val, y_val),
+        epochs=epochs,
+        batch_size=batch_size,
+    )
 
-        model.save(output_model_path)
-        print(f"\nTrained model successfully saved to: {output_model_path}")
+    model.save(output_model_path)
+    print(f"\nTrained model successfully saved to: {output_model_path}")
 
-        # Save class mapping
-        label_file = os.path.splitext(output_model_path)[0] + "_labels.json"
-        with open(label_file, "w") as f:
-            json.dump(LABEL_TO_CHAR, f, indent=2)
-        print(f"Class labels saved to: {label_file}")
+    # Save class mapping
+    label_file = os.path.splitext(output_model_path)[0] + "_labels.json"
+    with open(label_file, "w") as f:
+        json.dump(LABEL_TO_CHAR, f, indent=2)
+    print(f"Class labels saved to: {label_file}")
 
 
 def main():

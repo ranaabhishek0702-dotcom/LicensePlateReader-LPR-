@@ -80,22 +80,21 @@ def compare_backends(
     print(f"\nEvaluating {len(char_images)} character patches across both OCR backends...\n")
 
     # 1. Initialize Backend A (Tesseract)
-    backend_a_ready = True
+    backend_a_ready = False
     try:
         rec_a = TesseractRecognizer()
-    except Exception as e:
+        backend_a_ready = rec_a.is_available
+    except Exception:
         rec_a = None
-        backend_a_ready = False
 
     # 2. Initialize Backend B (Keras CNN)
-    backend_b_ready = True
+    backend_b_ready = False
     try:
         rec_b = KerasCNNRecognizer(model_path=model_path)
-        if rec_b.model is None:
-            backend_b_ready = False
-    except Exception as e:
+        if rec_b.model is not None:
+            backend_b_ready = True
+    except Exception:
         rec_b = None
-        backend_b_ready = False
 
     # 3. Process characters
     a_results = []
@@ -139,8 +138,8 @@ def compare_backends(
         c_a, conf_a = a_results[i]
         c_b, conf_b = b_results[i]
 
-        val_a = f"{c_a} (conf: {conf_a:.2f})" if c_a != "N/A" else "Not installed"
-        val_b = f"{c_b} (conf: {conf_b:.2f})" if c_b != "N/A" else "Untrained model"
+        val_a = f"{c_a} (conf: {conf_a:.2f})" if (backend_a_ready and c_a != "N/A") else "Binary missing"
+        val_b = f"{c_b} (conf: {conf_b:.2f})" if (backend_b_ready and c_b != "N/A") else "Untrained model"
 
         if c_a != "N/A" and c_b != "N/A":
             match_str = "MATCH" if c_a == c_b else "MISMATCH"

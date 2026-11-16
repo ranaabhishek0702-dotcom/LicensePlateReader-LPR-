@@ -88,16 +88,25 @@ class TesseractRecognizer(Recognizer):
         """
         self.tesseract_cmd = tesseract_cmd
         self._pytesseract = None
+        self.binary_available = False
         self._check_installation()
 
     def _check_installation(self):
         try:
             import pytesseract
+            import shutil
             self._pytesseract = pytesseract
             if self.tesseract_cmd:
                 self._pytesseract.pytesseract.tesseract_cmd = self.tesseract_cmd
+            bin_path = self.tesseract_cmd or shutil.which("tesseract")
+            self.binary_available = bin_path is not None
         except ImportError:
             self._pytesseract = None
+            self.binary_available = False
+
+    @property
+    def is_available(self) -> bool:
+        return self._pytesseract is not None and self.binary_available
 
     def recognize_char(self, char_img: Any) -> Tuple[str, float]:
         if self._pytesseract is None:
