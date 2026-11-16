@@ -52,14 +52,15 @@ The pipeline processes input frames through sequential image processing stages:
 
 ```
 .
-├── main.py                 # Real-time video stream runner & multi-view visualizer
-├── debug_plate_finder.py   # Diagnostics tool exporting intermediate processing stages
-├── requirements.txt        # Package dependencies
-├── src/                    # Core library
+├── main.py                     # Real-time video stream runner & multi-view visualizer
+├── debug_plate_finder.py       # Diagnostics tool exporting intermediate plate localization stages
+├── debug_char_segmentation.py  # Character segmentation tool exporting individual letter patches
+├── requirements.txt            # Package dependencies
+├── src/                        # Core library
 │   ├── __init__.py
-│   ├── plate_finder.py     # Plate localization, morphology, and geometric validation
-│   └── preprocessor.py     # Grayscale, Gaussian smoothing, and gradient operations
-└── data/                   # Input media (videos, sample frames)
+│   ├── plate_finder.py         # Plate localization, cleaning, and character segmentation
+│   └── preprocessor.py         # Grayscale, Gaussian smoothing, and gradient operations
+└── data/                       # Input media (videos, sample frames)
 ```
 
 ---
@@ -121,6 +122,22 @@ This exports 7 sequential diagnostic artifacts to the output directory:
 5. `05_closed.jpg`: Morphological closing ($22 \times 3$ kernel)
 6. `06_all_contours.jpg`: All extracted external contours
 7. `07_validated_contours.jpg`: Validated plate candidates annotated with geometry metrics
+
+### 3. Character Segmentation & Patch Extraction
+To segment and isolate individual alphanumeric character images from a license plate:
+
+```bash
+python3 debug_char_segmentation.py path/to/car.jpg --output output/segmentation/
+```
+
+This pipeline generates:
+- `01_cropped_plate.jpg`: Isolated license plate crop
+- `02_clean_plate.jpg`: Refined plate ROI from adaptive contour detection
+- `03_v_channel.jpg`: Extracted HSV Value channel
+- `04_adaptive_thresh.jpg`: Inverted adaptive threshold binary mask
+- `05_char_candidates_mask.jpg`: Convex hull candidate mask
+- `06_annotated_plate.jpg`: Plate image with numbered character bounding boxes
+- `chars/char_XX.jpg`: Isolated character patches sorted horizontally left-to-right
 
 ---
 

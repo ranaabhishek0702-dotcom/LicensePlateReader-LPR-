@@ -16,6 +16,12 @@ except ImportError:
     cv2 = None
     np = None
 
+try:
+    from skimage import measure
+except ImportError:
+    measure = None
+
+
 
 class PlateFinder:
     """
@@ -207,3 +213,216 @@ class PlateFinder:
                 })
 
         return candidates
+
+    def clean_plate(self, plate_img: Any) -> Tuple[Any, Optional[List[int]]]:
+        """
+        Refines a candidate plate crop by finding its principal content area.
+        Applies adaptive Gaussian thresholding, finds the largest contour,
+        and re-checks its aspect ratio and area.
+
+        Args:
+            plate_img: Cropped candidate plate image (BGR or Grayscale).
+
+        Returns:
+            Tuple of (cleaned_plate_img, [x, y, w, h] bounding box)
+        """
+        if cv2 is None or np is None:
+            raise RuntimeError("OpenCV (cv2) and NumPy are required.")
+
+        if plate_img is None or plate_img.size == 0:
+            return plate_img, None
+
+        if len(plate_img.shape) == 3:
+            gray = cv2.cvtColor(plate_img, cv2.COLOR_BGR2GRAY)
+        else:
+            gray = plate_img.copy()
+
+        # Adaptive Gaussian thresholding to isolate plate content from background
+        thresh = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+
+        contours, _ = cv2.findContours(
+            thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_NONE
+        )
+
+        if contours:
+            areas = [cv2.contourArea(c) for c in contours]
+            max_index = int(np.argmax(areas))
+            max_cnt = contours[max_index]
+            x, y, w, h = cv2.boundingRect(max_cnt)
+
+            area = w * h
+            aspect_ratio = (w / float(h)) if h > 0 else 0
+
+            # Re-check that the inner box adheres to plate geometry
+            # Using broader bounds to accommodate tight interior text borders
+            if (self.min_area * 0.2 <= area <= self.max_area) and (
+                self.min_ratio * 0.7 <= aspect_ratio <= self.max_ratio * 1.3
+            ):
+                cleaned = plate_img[y : y + h, x : x + w]
+                if cleaned.size > 0:
+                    return cleaned, [x, y, w, h]
+
+        return plate_img, None
+
+    def segment_chars(
+        self,
+        plate_img: Any,
+        fixed_width: int = 400,
+        min_chars: int = 4,
+        max_chars: int = 12,
+        char_min_aspect: float = 0.1,
+        char_max_aspect: float = 1.0,
+        min_solidity: float = 0.15,
+        min_height_ratio: float = 0.30,
+        max_height_ratio: float = 0.95,
+    ) -> Dict[str, Any]:
+        """
+        Segments individual alphanumeric characters from a cleaned license plate:
+          1. Extracts V (Value) channel from HSV color space.
+          2. Applies adaptive Gaussian thresholding and inverts (white text on black).
+          3. Normalizes image width to fixed_width (default 400px).
+          4. Performs connected-component labeling via skimage.measure.label.
+          5. Filters components using aspect ratio, solidity, and height ratio checks.
+          6. Computes convex hulls and draws them onto a candidate mask.
+          7. Extracts characters sorted horizontally from left to right.
+
+        Args:
+            plate_img: Cropped plate image.
+            fixed_width: Canonical width for consistent character scale.
+            min_chars: Configurable lower bound for expected plate character count.
+            max_chars: Configurable upper bound for expected plate character count.
+            char_min_aspect: Minimum character width/height ratio.
+            char_max_aspect: Maximum character width/height ratio.
+            min_solidity: Minimum ratio of contour area to bounding box area.
+            min_height_ratio: Minimum character height relative to plate height.
+            max_height_ratio: Maximum character height relative to plate height.
+
+        Returns:
+            Dictionary with:
+              - 'characters': list of dicts [{'patch': image, 'binary': mask, 'bbox': (x, y, w, h)}]
+              - 'count': number of extracted characters
+              - 'is_valid_count': boolean flag (min_chars <= count <= max_chars)
+              - 'v_channel': V channel image
+              - 'thresh': Inverted adaptive threshold binary image
+              - 'char_mask': Convex hull candidates mask
+              - 'plate_resized': Resized plate image
+        """
+        if cv2 is None or np is None:
+            raise RuntimeError("OpenCV (cv2) and NumPy are required.")
+
+        if plate_img is None or plate_img.size == 0:
+            return {
+                "characters": [],
+                "count": 0,
+                "is_valid_count": False,
+                "v_channel": None,
+                "thresh": None,
+                "char_mask": None,
+                "plate_resized": None,
+            }
+
+        # 1. Extract V (Value) channel from HSV
+        if len(plate_img.shape) == 3:
+            hsv = cv2.cvtColor(plate_img, cv2.COLOR_BGR2HSV)
+            v_channel = hsv[:, :, 2]
+        else:
+            v_channel = plate_img.copy()
+
+        # 2. Adaptive Gaussian thresholding & inversion (white characters on dark background)
+        thresh = cv2.adaptiveThreshold(
+            v_channel, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
+        )
+        thresh = cv2.bitwise_not(thresh)
+
+        # 3. Canonical resizing to fixed_width (preserving aspect ratio)
+        orig_h, orig_w = v_channel.shape[:2]
+        aspect = fixed_width / float(orig_w) if orig_w > 0 else 1.0
+        new_h = max(10, int(orig_h * aspect))
+
+        if len(plate_img.shape) == 3:
+            plate_resized = cv2.resize(plate_img, (fixed_width, new_h), interpolation=cv2.INTER_AREA)
+        else:
+            plate_resized = cv2.resize(plate_img, (fixed_width, new_h), interpolation=cv2.INTER_AREA)
+
+        thresh_resized = cv2.resize(thresh, (fixed_width, new_h), interpolation=cv2.INTER_NEAREST)
+
+        # 4. Connected-component labeling (skimage.measure.label)
+        if measure is not None:
+            labels = measure.label(thresh_resized, background=0)
+        else:
+            # Fallback if skimage is not installed
+            _, labels = cv2.connectedComponents(thresh_resized)
+
+        char_candidates = np.zeros(thresh_resized.shape, dtype=np.uint8)
+        plate_h, plate_w = thresh_resized.shape
+
+        # 5. Filter components using rule-based criteria & compute convex hulls
+        unique_labels = np.unique(labels)
+        for label in unique_labels:
+            if label == 0:
+                continue
+
+            component_mask = np.zeros(thresh_resized.shape, dtype=np.uint8)
+            component_mask[labels == label] = 255
+
+            cnts, _ = cv2.findContours(
+                component_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+            )
+            if not cnts:
+                continue
+
+            c = max(cnts, key=cv2.contourArea)
+            x, y, w, h = cv2.boundingRect(c)
+            area = cv2.contourArea(c)
+            box_area = w * h
+
+            if box_area == 0 or h == 0:
+                continue
+
+            aspect_ratio = w / float(h)
+            solidity = area / float(box_area)
+            height_ratio = h / float(plate_h)
+
+            # Apply character filter criteria
+            if (
+                char_min_aspect <= aspect_ratio <= char_max_aspect
+                and solidity >= min_solidity
+                and min_height_ratio <= height_ratio <= max_height_ratio
+            ):
+                hull = cv2.convexHull(c)
+                cv2.drawContours(char_candidates, [hull], -1, 255, -1)
+
+        # 6. Extract character contours from convex-hulled mask and sort left-to-right
+        char_cnts, _ = cv2.findContours(
+            char_candidates, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        characters = []
+        if char_cnts:
+            boxes = [cv2.boundingRect(c) for c in char_cnts]
+            # Sort left-to-right by x-coordinate: key = box[0]
+            sorted_chars = sorted(zip(char_cnts, boxes), key=lambda item: item[1][0])
+
+            for cnt, (x, y, w, h) in sorted_chars:
+                char_patch = plate_resized[y : y + h, x : x + w]
+                char_binary = thresh_resized[y : y + h, x : x + w]
+                characters.append({
+                    "patch": char_patch,
+                    "binary": char_binary,
+                    "bbox": (x, y, w, h),
+                })
+
+        count = len(characters)
+        is_valid_count = (min_chars <= count <= max_chars)
+
+        return {
+            "characters": characters,
+            "count": count,
+            "is_valid_count": is_valid_count,
+            "v_channel": v_channel,
+            "thresh": thresh_resized,
+            "char_mask": char_candidates,
+            "plate_resized": plate_resized,
+        }
