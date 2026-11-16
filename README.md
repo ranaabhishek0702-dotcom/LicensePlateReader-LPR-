@@ -55,9 +55,12 @@ The pipeline processes input frames through sequential image processing stages:
 ├── main.py                     # Real-time video stream runner & multi-view visualizer
 ├── debug_plate_finder.py       # Diagnostics tool exporting intermediate plate localization stages
 ├── debug_char_segmentation.py  # Character segmentation tool exporting individual letter patches
+├── train.py                    # Training pipeline for custom Keras character classifier CNN
+├── compare_ocr.py              # Side-by-side comparison between Tesseract and Keras CNN backends
 ├── requirements.txt            # Package dependencies
 ├── src/                        # Core library
 │   ├── __init__.py
+│   ├── ocr.py                  # Abstract Recognizer interface & Tesseract / Keras backends
 │   ├── plate_finder.py         # Plate localization, cleaning, and character segmentation
 │   └── preprocessor.py         # Grayscale, Gaussian smoothing, and gradient operations
 └── data/                       # Input media (videos, sample frames)
@@ -138,6 +141,20 @@ This pipeline generates:
 - `05_char_candidates_mask.jpg`: Convex hull candidate mask
 - `06_annotated_plate.jpg`: Plate image with numbered character bounding boxes
 - `chars/char_XX.jpg`: Isolated character patches sorted horizontally left-to-right
+
+### 4. Character Recognition & Backend Comparison
+Train the custom Keras CNN character classifier:
+
+```bash
+# Trains lightweight CNN on synthetic augmented plate glyphs (zero external download)
+python3 train.py --epochs 12
+```
+
+Run side-by-side recognition across Tesseract and the trained Keras CNN:
+
+```bash
+python3 compare_ocr.py path/to/car.jpg
+```
 
 ---
 
